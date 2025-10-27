@@ -474,24 +474,24 @@
                 <h1>Unfollowstr <span class="version"></span></h1>
             </div>
             <div class="header-right">
-                <button class="user-menu-button" id="userMenuButton" onclick="toggleUserMenu()">
-                    <div class="hamburger">
-                        <span></span>
-                        <span></span>
-                        <span></span>
-                    </div>
-                    <img id="userMenuAvatar" class="user-menu-avatar" src="" alt="Profile">
-                </button>
-                <div class="dropdown-menu" id="dropdownMenu">
-                    <div class="dropdown-user-info">
-                        <div class="dropdown-user-name" id="dropdownUserName">User</div>
-                        <div class="dropdown-user-pubkey" id="dropdownUserPubkey"></div>
-                    </div>
-                    <button class="dropdown-item" onclick="logout()">
-                        <span>🚪</span>
-                        <span>Logout</span>
-                    </button>
+            <button class="user-menu-button" id="userMenuButton">
+                <div class="hamburger">
+                    <span></span>
+                    <span></span>
+                    <span></span>
                 </div>
+                <img id="userMenuAvatar" class="user-menu-avatar" src="" alt="Profile">
+            </button>
+            <div class="dropdown-menu" id="dropdownMenu">
+                <div class="dropdown-user-info">
+                    <div class="dropdown-user-name" id="dropdownUserName">User</div>
+                    <div class="dropdown-user-pubkey" id="dropdownUserPubkey"></div>
+                </div>
+                <button class="dropdown-item" id="logoutBtn">
+                    <span>🚪</span>
+                    <span>Logout</span>
+                </button>
+            </div>
             </div>
         </div>
     </div>
@@ -500,7 +500,7 @@
         <div class="content">
             <div id="loginSection" class="login-section">
                 <h2 style="margin-bottom: 20px;">Unfollow npubs who aren't following you back</h2>
-                <button class="btn" onclick="login()">Login with Nostr</button>
+                <button class="btn" id="loginBtn">Login with Nostr</button>
                 <p style="margin-top: 15px; color: #666;">Requires a Nostr browser extension (nos2x, Alby, etc.)</p>
             </div>
 
@@ -529,11 +529,11 @@
 
                     <div class="controls">
                         <label>
-                            <input type="checkbox" id="selectAllCheckbox" onchange="toggleSelectAll()">
+                            <input type="checkbox" id="selectAllCheckbox">
                             Select All
                         </label>
                         <label>
-                            <input type="checkbox" id="filterNonFollowers" onchange="applyFilter()">
+                            <input type="checkbox" id="filterNonFollowers">
                             Show only non-followers
                         </label>
                     </div>
@@ -541,7 +541,7 @@
                     <div class="user-list" id="userList"></div>
 
                     <div class="action-buttons">
-                        <button class="btn btn-danger" id="unfollowBtn" onclick="unfollowSelected()" disabled>
+                        <button class="btn btn-danger" id="unfollowBtn" disabled>
                             Unfollow Selected
                         </button>
                     </div>
@@ -652,6 +652,14 @@
             // Clear expired cache entries
             clearExpiredCache();
             
+            // Setup event listeners
+            document.getElementById('loginBtn')?.addEventListener('click', login);
+            document.getElementById('logoutBtn')?.addEventListener('click', logout);
+            document.getElementById('userMenuButton')?.addEventListener('click', toggleUserMenu);
+            document.getElementById('selectAllCheckbox')?.addEventListener('change', toggleSelectAll);
+            document.getElementById('filterNonFollowers')?.addEventListener('change', applyFilter);
+            document.getElementById('unfollowBtn')?.addEventListener('click', unfollowSelected);
+            
             // Setup click outside handler for dropdown
             document.addEventListener('click', (event) => {
                 const dropdown = document.getElementById('dropdownMenu');
@@ -734,8 +742,6 @@
             }
         }
         
-        window.toggleUserMenu = toggleUserMenu;
-        window.closeUserMenu = closeUserMenu;
 
         async function login() {
             if (!window.nostr) {
@@ -797,9 +803,6 @@
                 alert('Failed to connect: ' + error.message);
             }
         }
-        
-        // Expose to global scope for onclick handlers
-        window.login = login;
 
         function logout() {
             userPubkey = null;
@@ -822,8 +825,6 @@
             document.getElementById('loginSection').style.display = 'block';
             document.getElementById('appSection').style.display = 'none';
         }
-        
-        window.logout = logout;
 
         async function loadFollowData() {
             document.getElementById('loadingSection').style.display = 'block';
@@ -1065,6 +1066,42 @@
 
             // Display all following users
             userList.innerHTML = followingList.map(pubkey => renderUserItem(pubkey)).join('');
+            
+            // Setup event delegation for user list
+            setupUserListEventDelegation();
+        }
+        
+        function setupUserListEventDelegation() {
+            const userList = document.getElementById('userList');
+            
+            // Remove existing listener if any
+            userList.replaceWith(userList.cloneNode(true));
+            const newUserList = document.getElementById('userList');
+            
+            // Handle clicks on user items
+            newUserList.addEventListener('click', (event) => {
+                const userItem = event.target.closest('.user-item');
+                if (!userItem) return;
+                
+                // Don't trigger if clicking checkbox or avatar
+                if (event.target.classList.contains('user-checkbox') || 
+                    event.target.classList.contains('user-avatar')) {
+                    return;
+                }
+                
+                // Copy npub to clipboard
+                const pubkey = userItem.dataset.pubkey;
+                if (pubkey) {
+                    copyNpubToClipboard(event, pubkey);
+                }
+            });
+            
+            // Handle checkbox changes
+            newUserList.addEventListener('change', (event) => {
+                if (event.target.classList.contains('user-checkbox')) {
+                    updateSelection();
+                }
+            });
         }
 
         function renderUserItem(pubkey) {
@@ -1100,9 +1137,9 @@
             }
 
             return `
-            <div class="user-item" data-pubkey="${pubkey}" onclick="copyNpubToClipboard(event, '${pubkey}')" style="cursor: pointer;" title="Click to copy npub">
-                <input type="checkbox" class="user-checkbox" data-pubkey="${pubkey}" onchange="updateSelection()" onclick="event.stopPropagation()">
-                <img src="${picture}" class="user-avatar" onerror="this.src='https://api.dicebear.com/7.x/identicon/svg?seed=${pubkey}'" onclick="event.stopPropagation()">
+            <div class="user-item" data-pubkey="${pubkey}" style="cursor: pointer;" title="Click to copy npub">
+                <input type="checkbox" class="user-checkbox" data-pubkey="${pubkey}">
+                <img src="${picture}" class="user-avatar" onerror="this.src='https://api.dicebear.com/7.x/identicon/svg?seed=${pubkey}'">
                 <div class="user-info">
                     <div class="user-name">${escapeHtml(displayName)}</div>
                     <div class="user-pubkey">${shortenedNpub}</div>
@@ -1173,8 +1210,6 @@
                 alert('Failed to copy npub to clipboard');
             }
         }
-        
-        window.copyNpubToClipboard = copyNpubToClipboard;
 
         function updateUserDisplay(pubkey) {
             const userItem = document.querySelector(`.user-item[data-pubkey="${pubkey}"]`);
@@ -1320,11 +1355,6 @@
                 btn.textContent = 'Unfollow Selected';
             }
         }
-        
-        window.unfollowSelected = unfollowSelected;
-        window.toggleSelectAll = toggleSelectAll;
-        window.applyFilter = applyFilter;
-        window.updateSelection = updateSelection;
     </script>
 
 </body>

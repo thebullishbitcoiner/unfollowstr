@@ -465,7 +465,7 @@
 
     </style>
 
-  <script type="module" crossorigin src="/assets/index-C9CvlfCk.js"></script>
+  <script type="module" crossorigin src="/assets/index-B17NOzaj.js"></script>
 </head>
 
 <body>
@@ -475,24 +475,24 @@
                 <h1>Unfollowstr <span class="version"></span></h1>
             </div>
             <div class="header-right">
-                <button class="user-menu-button" id="userMenuButton" onclick="toggleUserMenu()">
-                    <div class="hamburger">
-                        <span></span>
-                        <span></span>
-                        <span></span>
-                    </div>
-                    <img id="userMenuAvatar" class="user-menu-avatar" src="" alt="Profile">
-                </button>
-                <div class="dropdown-menu" id="dropdownMenu">
-                    <div class="dropdown-user-info">
-                        <div class="dropdown-user-name" id="dropdownUserName">User</div>
-                        <div class="dropdown-user-pubkey" id="dropdownUserPubkey"></div>
-                    </div>
-                    <button class="dropdown-item" onclick="logout()">
-                        <span>🚪</span>
-                        <span>Logout</span>
-                    </button>
+            <button class="user-menu-button" id="userMenuButton">
+                <div class="hamburger">
+                    <span></span>
+                    <span></span>
+                    <span></span>
                 </div>
+                <img id="userMenuAvatar" class="user-menu-avatar" src="" alt="Profile">
+            </button>
+            <div class="dropdown-menu" id="dropdownMenu">
+                <div class="dropdown-user-info">
+                    <div class="dropdown-user-name" id="dropdownUserName">User</div>
+                    <div class="dropdown-user-pubkey" id="dropdownUserPubkey"></div>
+                </div>
+                <button class="dropdown-item" id="logoutBtn">
+                    <span>🚪</span>
+                    <span>Logout</span>
+                </button>
+            </div>
             </div>
         </div>
     </div>
@@ -501,7 +501,7 @@
         <div class="content">
             <div id="loginSection" class="login-section">
                 <h2 style="margin-bottom: 20px;">Unfollow npubs who aren't following you back</h2>
-                <button class="btn" onclick="login()">Login with Nostr</button>
+                <button class="btn" id="loginBtn">Login with Nostr</button>
                 <p style="margin-top: 15px; color: #666;">Requires a Nostr browser extension (nos2x, Alby, etc.)</p>
             </div>
 
@@ -530,11 +530,11 @@
 
                     <div class="controls">
                         <label>
-                            <input type="checkbox" id="selectAllCheckbox" onchange="toggleSelectAll()">
+                            <input type="checkbox" id="selectAllCheckbox">
                             Select All
                         </label>
                         <label>
-                            <input type="checkbox" id="filterNonFollowers" onchange="applyFilter()">
+                            <input type="checkbox" id="filterNonFollowers">
                             Show only non-followers
                         </label>
                     </div>
@@ -542,7 +542,7 @@
                     <div class="user-list" id="userList"></div>
 
                     <div class="action-buttons">
-                        <button class="btn btn-danger" id="unfollowBtn" onclick="unfollowSelected()" disabled>
+                        <button class="btn btn-danger" id="unfollowBtn" disabled>
                             Unfollow Selected
                         </button>
                     </div>
