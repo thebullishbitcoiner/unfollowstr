@@ -468,10 +468,10 @@
 </head>
 
 <body>
-    <div class="header">
+        <div class="header">
         <div class="header-inner">
             <div class="header-left">
-                <h1>Unfollowstr <span class="version"></span></h1>
+            <h1>Unfollowstr <span class="version"></span></h1>
             </div>
             <div class="header-right">
             <button class="user-menu-button" id="userMenuButton">
@@ -494,7 +494,7 @@
             </div>
             </div>
         </div>
-    </div>
+        </div>
 
     <div class="container">
         <div class="content">
@@ -571,16 +571,28 @@
         
         // LocalStorage constants
         const CACHE_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours
-        const STORAGE_PREFIX = 'unfollowstr_';
+        const CACHE_KEY = 'unfollowstr_profileMetadata';
         
         // LocalStorage helper functions
+        function getAllCachedMetadata() {
+            try {
+                const cached = localStorage.getItem(CACHE_KEY);
+                if (!cached) return {};
+                return JSON.parse(cached);
+            } catch (error) {
+                console.warn('Failed to load cached metadata:', error);
+                return {};
+            }
+        }
+        
         function saveMetadataToCache(pubkey, metadata) {
             try {
-                const cacheEntry = {
+                const allMetadata = getAllCachedMetadata();
+                allMetadata[pubkey] = {
                     metadata,
                     timestamp: Date.now()
                 };
-                localStorage.setItem(STORAGE_PREFIX + 'profile_' + pubkey, JSON.stringify(cacheEntry));
+                localStorage.setItem(CACHE_KEY, JSON.stringify(allMetadata));
             } catch (error) {
                 console.warn('Failed to save metadata to cache:', error);
             }
@@ -588,15 +600,18 @@
         
         function loadMetadataFromCache(pubkey) {
             try {
-                const cached = localStorage.getItem(STORAGE_PREFIX + 'profile_' + pubkey);
-                if (!cached) return null;
+                const allMetadata = getAllCachedMetadata();
+                const cacheEntry = allMetadata[pubkey];
                 
-                const cacheEntry = JSON.parse(cached);
+                if (!cacheEntry) return null;
+                
                 const age = Date.now() - cacheEntry.timestamp;
                 
                 // Check if cache is expired
                 if (age > CACHE_EXPIRY_MS) {
-                    localStorage.removeItem(STORAGE_PREFIX + 'profile_' + pubkey);
+                    // Remove expired entry
+                    delete allMetadata[pubkey];
+                    localStorage.setItem(CACHE_KEY, JSON.stringify(allMetadata));
                     return null;
                 }
                 
@@ -609,32 +624,27 @@
         
         function clearExpiredCache() {
             try {
-                const keys = Object.keys(localStorage);
+                const allMetadata = getAllCachedMetadata();
+                const now = Date.now();
                 let removedCount = 0;
                 
-                keys.forEach(key => {
-                    if (key.startsWith(STORAGE_PREFIX + 'profile_')) {
-                        try {
-                            const cached = localStorage.getItem(key);
-                            if (cached) {
-                                const cacheEntry = JSON.parse(cached);
-                                const age = Date.now() - cacheEntry.timestamp;
-                                
-                                if (age > CACHE_EXPIRY_MS) {
-                                    localStorage.removeItem(key);
-                                    removedCount++;
-                                }
-                            }
-                        } catch (e) {
-                            // Invalid entry, remove it
-                            localStorage.removeItem(key);
+                Object.keys(allMetadata).forEach(pubkey => {
+                    const cacheEntry = allMetadata[pubkey];
+                    if (!cacheEntry || !cacheEntry.timestamp) {
+                        delete allMetadata[pubkey];
+                        removedCount++;
+                    } else {
+                        const age = now - cacheEntry.timestamp;
+                        if (age > CACHE_EXPIRY_MS) {
+                            delete allMetadata[pubkey];
                             removedCount++;
                         }
                     }
                 });
                 
                 if (removedCount > 0) {
-                    console.log(`🧹 Cleared ${removedCount} expired cache entries`);
+                    localStorage.setItem(CACHE_KEY, JSON.stringify(allMetadata));
+                    console.log(`🧹 Cleared ${removedCount} expired profile(s) from cache`);
                 }
             } catch (error) {
                 console.warn('Failed to clear expired cache:', error);
@@ -1171,9 +1181,9 @@
                 const item = event.currentTarget || event.target.closest('.user-item');
                 
                 if (item) {
-                    const originalBg = item.style.backgroundColor;
-                    item.style.backgroundColor = '#d4edda';
-                    item.style.transition = 'background-color 0.3s';
+                const originalBg = item.style.backgroundColor;
+                item.style.backgroundColor = '#d4edda';
+                item.style.transition = 'background-color 0.3s';
                     
                     // Reset background after delay
                     setTimeout(() => {
