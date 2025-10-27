@@ -1,0 +1,1332 @@
+<!DOCTYPE html>
+
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Unfollowstr</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #ffffff;
+            min-height: 100vh;
+            padding: 0;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 12px 20px;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .header-inner {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 20px;
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            border: 1px solid #e0e0e0;
+            overflow: hidden;
+        }
+
+        @media (min-width: 860px) {
+            .container {
+                margin: 20px auto;
+            }
+        }
+
+        .header-left {
+            display: flex;
+            align-items: baseline;
+            gap: 8px;
+        }
+
+        .header h1 {
+            font-size: 1.5em;
+            margin: 0;
+        }
+
+        .header h1 .version {
+            font-size: 0.5em;
+            font-weight: 400;
+            opacity: 0.7;
+        }
+
+        .header-right {
+            position: relative;
+        }
+
+        .user-menu-button {
+            display: none;
+            align-items: center;
+            gap: 8px;
+            background: rgba(255, 255, 255, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            padding: 4px 8px;
+            border-radius: 30px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(10px);
+        }
+
+        .user-menu-button:hover {
+            background: rgba(255, 255, 255, 0.3);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        }
+
+        .user-menu-button.active {
+            background: rgba(255, 255, 255, 0.35);
+        }
+
+        .hamburger {
+            display: flex;
+            flex-direction: column;
+            gap: 2.5px;
+            width: 16px;
+        }
+
+        .hamburger span {
+            display: block;
+            height: 2px;
+            background: white;
+            border-radius: 2px;
+            transition: all 0.3s ease;
+        }
+
+        .user-menu-button.active .hamburger span:nth-child(1) {
+            transform: rotate(45deg) translate(4px, 4px);
+        }
+
+        .user-menu-button.active .hamburger span:nth-child(2) {
+            opacity: 0;
+        }
+
+        .user-menu-button.active .hamburger span:nth-child(3) {
+            transform: rotate(-45deg) translate(4px, -4px);
+        }
+
+        .user-menu-avatar {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            border: 2px solid white;
+            object-fit: cover;
+        }
+
+        .dropdown-menu {
+            position: absolute;
+            top: calc(100% + 10px);
+            right: 0;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+            min-width: 200px;
+            overflow: hidden;
+            opacity: 0;
+            visibility: hidden;
+            transform: translateY(-10px);
+            transition: all 0.3s ease;
+            z-index: 1000;
+        }
+
+        .dropdown-menu.active {
+            opacity: 1;
+            visibility: visible;
+            transform: translateY(0);
+        }
+
+        .dropdown-menu::before {
+            content: '';
+            position: absolute;
+            top: -6px;
+            right: 20px;
+            width: 12px;
+            height: 12px;
+            background: white;
+            transform: rotate(45deg);
+        }
+
+        .dropdown-item {
+            padding: 15px 20px;
+            cursor: pointer;
+            transition: background 0.2s;
+            color: #333;
+            border: none;
+            background: none;
+            width: 100%;
+            text-align: left;
+            font-size: 16px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .dropdown-item:hover {
+            background: #f0f4ff;
+        }
+
+        .dropdown-divider {
+            height: 1px;
+            background: #e0e0e0;
+            margin: 5px 0;
+        }
+
+        .dropdown-user-info {
+            padding: 15px 20px;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        .dropdown-user-name {
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 4px;
+        }
+
+        .dropdown-user-pubkey {
+            font-size: 0.85em;
+            color: #888;
+            font-family: monospace;
+        }
+
+        .content {
+            padding: 30px;
+        }
+
+        .login-section {
+            text-align: center;
+            padding: 40px 20px;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px 40px;
+            font-size: 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            font-weight: 600;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .status {
+            text-align: center;
+            margin: 20px 0;
+            color: #666;
+            font-style: italic;
+        }
+
+        .stats {
+            display: flex;
+            gap: 20px;
+            margin: 20px 0;
+            flex-wrap: wrap;
+        }
+
+        .stat-card {
+            flex: 1;
+            min-width: 150px;
+            background: #f7f7f9;
+            padding: 20px;
+            border-radius: 12px;
+            text-align: center;
+        }
+
+        .stat-number {
+            font-size: 2em;
+            font-weight: bold;
+            color: #667eea;
+        }
+
+        .stat-label {
+            color: #666;
+            margin-top: 5px;
+        }
+
+        .controls {
+            display: flex;
+            gap: 15px;
+            margin: 20px 0;
+            align-items: center;
+        }
+
+        .controls label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .controls input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+
+        .user-list {
+            border: 2px solid #e0e0e0;
+            border-radius: 12px;
+            max-height: 400px;
+            overflow-y: auto;
+            margin: 20px 0;
+        }
+
+        .user-item {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            padding: 15px;
+            border-bottom: 1px solid #f0f0f0;
+            transition: background 0.2s, box-shadow 0.2s;
+        }
+
+        .user-item:hover {
+            background: #f0f4ff;
+            box-shadow: 0 2px 8px rgba(102, 126, 234, 0.1);
+        }
+
+        .user-item:last-child {
+            border-bottom: none;
+        }
+
+        .user-item input[type="checkbox"] {
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+
+        .user-avatar {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            object-fit: cover;
+            flex-shrink: 0;
+            border: 2px solid #f0f0f0;
+        }
+
+        .user-info {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .user-name {
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 4px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .user-pubkey {
+            font-size: 0.85em;
+            color: #888;
+            font-family: monospace;
+        }
+
+        .badge-container {
+            flex-shrink: 0;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 0.85em;
+            font-weight: 500;
+            white-space: nowrap;
+        }
+
+        .badge-checking {
+            background: #f0f0f0;
+            color: #666;
+            animation: pulse 2s infinite;
+        }
+
+        .badge-success {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .badge-warning {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.5;
+            }
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(400px);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        @keyframes slideOut {
+            from {
+                transform: translateX(0);
+                opacity: 1;
+            }
+            to {
+                transform: translateX(400px);
+                opacity: 0;
+            }
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #999;
+        }
+
+        .empty-state svg {
+            width: 80px;
+            height: 80px;
+            margin-bottom: 20px;
+            opacity: 0.5;
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            margin-top: 20px;
+        }
+
+        .btn-secondary {
+            background: #6c757d;
+        }
+
+        .btn-danger {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        }
+
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+    </style>
+
+</head>
+
+<body>
+    <div class="header">
+        <div class="header-inner">
+            <div class="header-left">
+                <h1>Unfollowstr <span class="version"></span></h1>
+            </div>
+            <div class="header-right">
+                <button class="user-menu-button" id="userMenuButton" onclick="toggleUserMenu()">
+                    <div class="hamburger">
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                    </div>
+                    <img id="userMenuAvatar" class="user-menu-avatar" src="" alt="Profile">
+                </button>
+                <div class="dropdown-menu" id="dropdownMenu">
+                    <div class="dropdown-user-info">
+                        <div class="dropdown-user-name" id="dropdownUserName">User</div>
+                        <div class="dropdown-user-pubkey" id="dropdownUserPubkey"></div>
+                    </div>
+                    <button class="dropdown-item" onclick="logout()">
+                        <span>🚪</span>
+                        <span>Logout</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="content">
+            <div id="loginSection" class="login-section">
+                <h2 style="margin-bottom: 20px;">Unfollow npubs who aren't following you back</h2>
+                <button class="btn" onclick="login()">Login with Nostr</button>
+                <p style="margin-top: 15px; color: #666;">Requires a Nostr browser extension (nos2x, Alby, etc.)</p>
+            </div>
+
+            <div id="appSection" style="display: none;">
+
+                <div id="loadingSection">
+                    <div class="spinner"></div>
+                    <div class="status" id="statusText">Loading your follows...</div>
+                </div>
+
+                <div id="dataSection" style="display: none;">
+                    <div class="stats">
+                        <div class="stat-card">
+                            <div class="stat-number" id="followingCount">0</div>
+                            <div class="stat-label">Following</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-number" id="notFollowingBackCount">0</div>
+                            <div class="stat-label">Not Following Back</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-number" id="selectedCount">0</div>
+                            <div class="stat-label">Selected</div>
+                        </div>
+                    </div>
+
+                    <div class="controls">
+                        <label>
+                            <input type="checkbox" id="selectAllCheckbox" onchange="toggleSelectAll()">
+                            Select All
+                        </label>
+                        <label>
+                            <input type="checkbox" id="filterNonFollowers" onchange="applyFilter()">
+                            Show only non-followers
+                        </label>
+                    </div>
+
+                    <div class="user-list" id="userList"></div>
+
+                    <div class="action-buttons">
+                        <button class="btn btn-danger" id="unfollowBtn" onclick="unfollowSelected()" disabled>
+                            Unfollow Selected
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import NDK, { NDKNip07Signer, NDKEvent } from '@nostr-dev-kit/ndk';
+        import { nip19 } from 'nostr-tools';
+        import packageJson from './package.json';
+        
+        // State
+        let ndk = null;
+        let userPubkey = null;
+        let currentUser = null;
+        let followingList = [];
+        let notFollowingBack = [];
+        let selectedUsers = new Set();
+        let userMetadata = new Map(); // Store user metadata (names, pictures, etc)
+        let followsBackStatus = new Map(); // Track who follows back
+        let relays = [
+            'wss://relay.nostr.band',
+            'wss://relay.damus.io'
+        ];
+        
+        // LocalStorage constants
+        const CACHE_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours
+        const STORAGE_PREFIX = 'unfollowstr_';
+        
+        // LocalStorage helper functions
+        function saveMetadataToCache(pubkey, metadata) {
+            try {
+                const cacheEntry = {
+                    metadata,
+                    timestamp: Date.now()
+                };
+                localStorage.setItem(STORAGE_PREFIX + 'profile_' + pubkey, JSON.stringify(cacheEntry));
+            } catch (error) {
+                console.warn('Failed to save metadata to cache:', error);
+            }
+        }
+        
+        function loadMetadataFromCache(pubkey) {
+            try {
+                const cached = localStorage.getItem(STORAGE_PREFIX + 'profile_' + pubkey);
+                if (!cached) return null;
+                
+                const cacheEntry = JSON.parse(cached);
+                const age = Date.now() - cacheEntry.timestamp;
+                
+                // Check if cache is expired
+                if (age > CACHE_EXPIRY_MS) {
+                    localStorage.removeItem(STORAGE_PREFIX + 'profile_' + pubkey);
+                    return null;
+                }
+                
+                return cacheEntry.metadata;
+            } catch (error) {
+                console.warn('Failed to load metadata from cache:', error);
+                return null;
+            }
+        }
+        
+        function clearExpiredCache() {
+            try {
+                const keys = Object.keys(localStorage);
+                let removedCount = 0;
+                
+                keys.forEach(key => {
+                    if (key.startsWith(STORAGE_PREFIX + 'profile_')) {
+                        try {
+                            const cached = localStorage.getItem(key);
+                            if (cached) {
+                                const cacheEntry = JSON.parse(cached);
+                                const age = Date.now() - cacheEntry.timestamp;
+                                
+                                if (age > CACHE_EXPIRY_MS) {
+                                    localStorage.removeItem(key);
+                                    removedCount++;
+                                }
+                            }
+                        } catch (e) {
+                            // Invalid entry, remove it
+                            localStorage.removeItem(key);
+                            removedCount++;
+                        }
+                    }
+                });
+                
+                if (removedCount > 0) {
+                    console.log(`🧹 Cleared ${removedCount} expired cache entries`);
+                }
+            } catch (error) {
+                console.warn('Failed to clear expired cache:', error);
+            }
+        }
+        
+        // Initialize NDK when DOM is ready
+        window.addEventListener('DOMContentLoaded', async () => {
+            // Set version number in header
+            const versionElement = document.querySelector('.version');
+            if (versionElement) {
+                versionElement.textContent = `v${packageJson.version}`;
+            }
+            
+            // Clear expired cache entries
+            clearExpiredCache();
+            
+            // Setup click outside handler for dropdown
+            document.addEventListener('click', (event) => {
+                const dropdown = document.getElementById('dropdownMenu');
+                const menuButton = document.getElementById('userMenuButton');
+                
+                if (dropdown && menuButton && 
+                    !dropdown.contains(event.target) && 
+                    !menuButton.contains(event.target)) {
+                    closeUserMenu();
+                }
+            });
+            
+            console.log('🚀 Initializing NDK...');
+            ndk = new NDK({
+                explicitRelayUrls: relays,
+                // aiGuardrails: true // Enable for development
+            });
+            
+            try {
+                await ndk.connect();
+                console.log('✓ NDK connected to relays:', relays);
+            } catch (error) {
+                console.error('❌ Failed to connect to relays:', error);
+            }
+        });
+        
+        function toggleUserMenu() {
+            const dropdown = document.getElementById('dropdownMenu');
+            const menuButton = document.getElementById('userMenuButton');
+            
+            dropdown.classList.toggle('active');
+            menuButton.classList.toggle('active');
+        }
+        
+        function closeUserMenu() {
+            const dropdown = document.getElementById('dropdownMenu');
+            const menuButton = document.getElementById('userMenuButton');
+            
+            dropdown.classList.remove('active');
+            menuButton.classList.remove('active');
+        }
+        
+        function updateUserMenuDisplay() {
+            const menuButton = document.getElementById('userMenuButton');
+            const avatar = document.getElementById('userMenuAvatar');
+            const dropdownName = document.getElementById('dropdownUserName');
+            const dropdownPubkey = document.getElementById('dropdownUserPubkey');
+            
+            if (userPubkey) {
+                // Get user metadata if available
+                const metadata = userMetadata.get(userPubkey);
+                const displayName = metadata?.display_name || metadata?.name || 'Anonymous';
+                const picture = metadata?.picture || `https://api.dicebear.com/7.x/identicon/svg?seed=${userPubkey}`;
+                
+                // Convert to npub and shorten it
+                let displayPubkey;
+                try {
+                    const npub = nip19.npubEncode(userPubkey);
+                    displayPubkey = npub.substring(0, 12) + '...' + npub.substring(npub.length - 8);
+                } catch (error) {
+                    console.error('Error encoding npub:', error);
+                    displayPubkey = userPubkey.substring(0, 8) + '...' + userPubkey.substring(userPubkey.length - 8);
+                }
+                
+                // Update avatar
+                avatar.src = picture;
+                avatar.onerror = () => {
+                    avatar.src = `https://api.dicebear.com/7.x/identicon/svg?seed=${userPubkey}`;
+                };
+                
+                // Update dropdown info
+                dropdownName.textContent = displayName;
+                dropdownPubkey.textContent = displayPubkey;
+                
+                // Show menu button
+                menuButton.style.display = 'flex';
+            } else {
+                // Hide menu button
+                menuButton.style.display = 'none';
+            }
+        }
+        
+        window.toggleUserMenu = toggleUserMenu;
+        window.closeUserMenu = closeUserMenu;
+
+        async function login() {
+            if (!window.nostr) {
+                alert('Please install a Nostr browser extension like nos2x or Alby');
+                return;
+            }
+            
+            if (!ndk) {
+                alert('NDK is still loading, please try again in a moment');
+                return;
+            }
+
+            try {
+                // Use NIP-07 signer from browser extension
+                const signer = new NDKNip07Signer();
+                ndk.signer = signer;
+                
+                // Get user from signer
+                currentUser = await signer.user();
+                userPubkey = currentUser.pubkey;
+                
+                console.log('🔑 Logged in with pubkey:', userPubkey);
+                console.log('👤 Current user:', currentUser);
+                
+                // Fetch current user's profile
+                try {
+                    // Check cache first
+                    const cachedProfile = loadMetadataFromCache(userPubkey);
+                    if (cachedProfile) {
+                        userMetadata.set(userPubkey, cachedProfile);
+                    } else {
+                        // Fetch from network
+                        const profile = await currentUser.fetchProfile();
+                        if (profile) {
+                            const metadata = {
+                                name: profile.name,
+                                display_name: profile.displayName,
+                                picture: profile.image,
+                                about: profile.about,
+                                nip05: profile.nip05,
+                                created_at: profile.created_at || Date.now() / 1000
+                            };
+                            userMetadata.set(userPubkey, metadata);
+                            saveMetadataToCache(userPubkey, metadata);
+                        }
+                    }
+                } catch (error) {
+                    console.warn('Could not fetch user profile:', error);
+                }
+                
+                // Update UI
+                document.getElementById('loginSection').style.display = 'none';
+                document.getElementById('appSection').style.display = 'block';
+                updateUserMenuDisplay();
+
+                await loadFollowData();
+            } catch (error) {
+                console.error('Login error:', error);
+                alert('Failed to connect: ' + error.message);
+            }
+        }
+        
+        // Expose to global scope for onclick handlers
+        window.login = login;
+
+        function logout() {
+            userPubkey = null;
+            currentUser = null;
+            followingList = [];
+            notFollowingBack = [];
+            selectedUsers.clear();
+            userMetadata.clear();
+            followsBackStatus.clear();
+            
+            // Remove signer
+            if (ndk) {
+                ndk.signer = undefined;
+            }
+            
+            // Close and hide menu
+            closeUserMenu();
+            updateUserMenuDisplay();
+            
+            document.getElementById('loginSection').style.display = 'block';
+            document.getElementById('appSection').style.display = 'none';
+        }
+        
+        window.logout = logout;
+
+        async function loadFollowData() {
+            document.getElementById('loadingSection').style.display = 'block';
+            document.getElementById('dataSection').style.display = 'none';
+
+            try {
+                // Fetch user's following list
+                console.log('Starting to fetch follow list...');
+                document.getElementById('statusText').textContent = 'Fetching your following list...';
+                followingList = await fetchFollowList(userPubkey);
+                console.log('Following list fetched:', followingList.length, 'users');
+
+                if (followingList.length === 0) {
+                    displayResults();
+                    return;
+                }
+
+                // Initialize follow-back status as "checking" for all
+                followingList.forEach(pubkey => {
+                    followsBackStatus.set(pubkey, 'checking');
+                });
+
+                // Display the list immediately
+                displayResults();
+
+                // Start background processes
+                console.log('Starting background metadata and follow-back checks...');
+                fetchMetadataInBackground(followingList);
+                checkFollowsBackInBackground(followingList);
+
+            } catch (error) {
+                console.error('Load data error:', error);
+                document.getElementById('statusText').textContent = 'Error: ' + error.message;
+            }
+        }
+
+        async function fetchFollowList(pubkey) {
+            console.log('📋 Fetching follow list from relays:', relays);
+            
+            try {
+                // Use NDK to fetch follow list (Kind 3 event)
+                const filter = { kinds: [3], authors: [pubkey], limit: 1 };
+                const events = await ndk.fetchEvents(filter);
+                
+                if (events.size === 0) {
+                    console.log('No follow list found');
+                    return [];
+                }
+                
+                // Get the most recent event
+                const event = Array.from(events)[0];
+                console.log('📋 FOLLOW LIST EVENT (Kind 3):', event.rawEvent());
+                
+                // Extract p tags (follows) and validate them
+                const follows = event.tags
+                    .filter(tag => tag[0] === 'p')
+                    .map(tag => tag[1])
+                    .filter(pubkey => {
+                        // Validate that pubkey is a 64-character hex string
+                        if (!pubkey || typeof pubkey !== 'string' || pubkey.length !== 64) {
+                            console.warn('⚠️ Skipping invalid pubkey in follow list:', pubkey);
+                            return false;
+                        }
+                        // Check if it's a valid hex string
+                        if (!/^[0-9a-f]{64}$/i.test(pubkey)) {
+                            console.warn('⚠️ Skipping non-hex pubkey in follow list:', pubkey);
+                            return false;
+                        }
+                        return true;
+                    });
+                    
+                console.log('✓ Found', follows.length, 'valid follows');
+                return follows;
+            } catch (error) {
+                console.error('❌ Error fetching follow list:', error);
+                return [];
+            }
+        }
+
+        // Background check for who follows back - updates UI in real-time
+        async function checkFollowsBackInBackground(pubkeys) {
+            console.log('🔄 Starting follow-back check for', pubkeys.length, 'users from', relays.length, 'relay(s)');
+            
+            // Batch into smaller chunks to avoid relay limits (max 100 per batch)
+            const BATCH_SIZE = 100;
+            const batches = [];
+            for (let i = 0; i < pubkeys.length; i += BATCH_SIZE) {
+                batches.push(pubkeys.slice(i, i + BATCH_SIZE));
+            }
+            
+            console.log('   Split into', batches.length, 'batch(es) of max', BATCH_SIZE, 'users each');
+            
+            let followBackCount = 0;
+            let batchesCompleted = 0;
+            
+            // Process each batch
+            batches.forEach((batch, batchIndex) => {
+                console.log(`   📦 Starting follow-back batch ${batchIndex + 1}/${batches.length} (${batch.length} users)`);
+                
+                const filter = {
+                    kinds: [3],
+                    authors: batch,
+                    '#p': [userPubkey]
+                };
+                
+                const sub = ndk.subscribe(filter, { closeOnEose: false }, {
+                    onEvent: (event) => {
+                        followBackCount++;
+                        if (followBackCount <= 5) {
+                            console.log('🔄 FOLLOW-BACK CHECK EVENT (Kind 3):', event.rawEvent());
+                        } else if (followBackCount === 6) {
+                            console.log('🔄 ... (suppressing further follow-back logs)');
+                        }
+                        
+                        const pubkey = event.pubkey;
+                        followsBackStatus.set(pubkey, 'yes');
+                        
+                        if (followBackCount <= 5) {
+                            console.log('✓ Follows back:', pubkey.substring(0, 8));
+                        }
+                        updateUserBadge(pubkey);
+                    },
+                    onEose: () => {
+                        batchesCompleted++;
+                        console.log(`   ✓ Follow-back batch ${batchIndex + 1}/${batches.length} complete (EOSE)`);
+                        sub.stop();
+                        
+                        if (batchesCompleted === batches.length) {
+                            // Mark remaining as "no"
+                            pubkeys.forEach(pubkey => {
+                                if (followsBackStatus.get(pubkey) === 'checking') {
+                                    followsBackStatus.set(pubkey, 'no');
+                                    updateUserBadge(pubkey);
+                                }
+                            });
+                            updateStats();
+                            
+                            const notFollowingBack = pubkeys.length - followBackCount;
+                            console.log(`✅ All follow-back batches complete. ${followBackCount}/${pubkeys.length} follow back, ${notFollowingBack} don't`);
+                        }
+                    }
+                });
+            });
+        }
+
+        // Fetch metadata for all users in background using NDK's built-in profile fetching
+        async function fetchMetadataInBackground(pubkeys) {
+            console.log('📋 Fetching metadata for', pubkeys.length, 'users from', relays.length, 'relay(s)');
+            
+            let metadataCount = 0;
+            let cacheHits = 0;
+            let cacheMisses = 0;
+            
+            // First, load all cached metadata
+            pubkeys.forEach(pubkey => {
+                const cached = loadMetadataFromCache(pubkey);
+                if (cached) {
+                    cacheHits++;
+                    userMetadata.set(pubkey, cached);
+                    updateUserDisplay(pubkey);
+                }
+            });
+            
+            if (cacheHits > 0) {
+                console.log(`💾 Loaded ${cacheHits} profiles from cache`);
+            }
+            
+            // Fetch profiles in parallel (NDK handles batching internally)
+            const profilePromises = pubkeys.map(async (pubkey, index) => {
+                try {
+                    // Skip if already in cache
+                    if (userMetadata.has(pubkey)) {
+                        return;
+                    }
+                    
+                    cacheMisses++;
+                    const user = ndk.getUser({ pubkey });
+                    const profile = await user.fetchProfile();
+                    
+                    if (profile) {
+                        metadataCount++;
+                        
+                        if (metadataCount <= 5) {
+                            console.log('👤 Fetched profile:', { pubkey: pubkey.substring(0, 8), profile });
+                        } else if (metadataCount === 6) {
+                            console.log('👤 ... (suppressing further metadata logs)');
+                        }
+                        
+                        const metadata = {
+                            name: profile.name,
+                            display_name: profile.displayName,
+                            picture: profile.image,
+                            about: profile.about,
+                            nip05: profile.nip05,
+                            created_at: profile.created_at || Date.now() / 1000
+                        };
+                        
+                        userMetadata.set(pubkey, metadata);
+                        saveMetadataToCache(pubkey, metadata);
+                        updateUserDisplay(pubkey);
+                    }
+                } catch (error) {
+                    // Silently fail for missing profiles
+                    if (metadataCount < 5) {
+                        console.debug('No profile found for:', pubkey.substring(0, 8));
+                    }
+                }
+            });
+            
+            // Wait for all profiles to be fetched (with a timeout)
+            await Promise.allSettled(profilePromises);
+            
+            console.log(`✅ Metadata fetching complete. Cache hits: ${cacheHits}, Network fetches: ${metadataCount}/${cacheMisses} (${cacheMisses > 0 ? Math.round(metadataCount/cacheMisses*100) : 0}%)`);
+        }
+
+        function displayResults() {
+            document.getElementById('loadingSection').style.display = 'none';
+            document.getElementById('dataSection').style.display = 'block';
+
+            updateStats();
+
+            const userList = document.getElementById('userList');
+
+            // Check if user has no follows at all
+            if (followingList.length === 0) {
+                userList.innerHTML = `
+                <div class="empty-state">
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/>
+                    </svg>
+                    <h3>No Follows Yet</h3>
+                    <p>You're not following anyone yet. Use a Nostr client to follow some people first!</p>
+                    <p style="margin-top: 10px; font-size: 0.9em;">Try <a href="https://primal.net/" target="_blank" style="color: #667eea;">Primal</a> or <a href="https://nostrudel.ninja/" target="_blank" style="color: #667eea;">Nostrudel</a></p>
+                </div>
+            `;
+                document.getElementById('unfollowBtn').disabled = true;
+                return;
+            }
+
+            // Display all following users
+            userList.innerHTML = followingList.map(pubkey => renderUserItem(pubkey)).join('');
+        }
+
+        function renderUserItem(pubkey) {
+            // Validate pubkey format (should be 64-character hex string)
+            if (!pubkey || typeof pubkey !== 'string' || pubkey.length !== 64) {
+                console.warn('Invalid pubkey format:', pubkey);
+                return ''; // Skip invalid entries
+            }
+            
+            const metadata = userMetadata.get(pubkey);
+            const status = followsBackStatus.get(pubkey) || 'checking';
+            const displayName = metadata?.display_name || metadata?.name || 'Unknown';
+            const picture = metadata?.picture || `https://api.dicebear.com/7.x/identicon/svg?seed=${pubkey}`;
+            
+            // Convert pubkey to npub and shorten it with error handling
+            let shortenedNpub;
+            try {
+                const npub = nip19.npubEncode(pubkey);
+                shortenedNpub = npub.substring(0, 10) + '...' + npub.substring(npub.length - 8);
+            } catch (error) {
+                console.error('Error encoding npub for pubkey:', pubkey, error);
+                // Fallback to showing truncated hex pubkey
+                shortenedNpub = pubkey.substring(0, 8) + '...' + pubkey.substring(pubkey.length - 8);
+            }
+            
+            let badge = '';
+            if (status === 'checking') {
+                badge = '<span class="badge badge-checking">Checking...</span>';
+            } else if (status === 'yes') {
+                badge = '<span class="badge badge-success">✓ Follows Back</span>';
+            } else {
+                badge = '<span class="badge badge-warning">⚠ Doesn\'t Follow Back</span>';
+            }
+
+            return `
+            <div class="user-item" data-pubkey="${pubkey}" onclick="copyNpubToClipboard(event, '${pubkey}')" style="cursor: pointer;" title="Click to copy npub">
+                <input type="checkbox" class="user-checkbox" data-pubkey="${pubkey}" onchange="updateSelection()" onclick="event.stopPropagation()">
+                <img src="${picture}" class="user-avatar" onerror="this.src='https://api.dicebear.com/7.x/identicon/svg?seed=${pubkey}'" onclick="event.stopPropagation()">
+                <div class="user-info">
+                    <div class="user-name">${escapeHtml(displayName)}</div>
+                    <div class="user-pubkey">${shortenedNpub}</div>
+                </div>
+                <div class="badge-container">
+                    ${badge}
+                </div>
+            </div>
+        `;
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        async function copyNpubToClipboard(event, pubkey) {
+            event.preventDefault();
+            
+            try {
+                // Convert pubkey to npub
+                const npub = nip19.npubEncode(pubkey);
+                
+                // Copy to clipboard
+                await navigator.clipboard.writeText(npub);
+                
+                // Visual feedback - find the user item element
+                const item = event.currentTarget || event.target.closest('.user-item');
+                
+                if (item) {
+                    const originalBg = item.style.backgroundColor;
+                    item.style.backgroundColor = '#d4edda';
+                    item.style.transition = 'background-color 0.3s';
+                    
+                    // Reset background after delay
+                    setTimeout(() => {
+                        item.style.backgroundColor = originalBg;
+                    }, 1500);
+                }
+                
+                // Show a temporary toast message
+                const toast = document.createElement('div');
+                toast.textContent = '✓ npub copied to clipboard!';
+                toast.style.cssText = `
+                    position: fixed;
+                    bottom: 20px;
+                    right: 20px;
+                    background: #28a745;
+                    color: white;
+                    padding: 12px 24px;
+                    border-radius: 8px;
+                    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+                    z-index: 10000;
+                    animation: slideIn 0.3s ease-out;
+                `;
+                document.body.appendChild(toast);
+                
+                // Remove toast after delay
+                setTimeout(() => {
+                    toast.style.animation = 'slideOut 0.3s ease-in';
+                    setTimeout(() => toast.remove(), 300);
+                }, 1500);
+                
+                console.log('📋 Copied to clipboard:', npub);
+            } catch (error) {
+                console.error('Failed to copy npub:', error);
+                alert('Failed to copy npub to clipboard');
+            }
+        }
+        
+        window.copyNpubToClipboard = copyNpubToClipboard;
+
+        function updateUserDisplay(pubkey) {
+            const userItem = document.querySelector(`.user-item[data-pubkey="${pubkey}"]`);
+            if (userItem) {
+                const checkbox = userItem.querySelector('.user-checkbox');
+                const isChecked = checkbox?.checked || false;
+                const newHtml = renderUserItem(pubkey);
+                userItem.outerHTML = newHtml;
+                // Restore checkbox state
+                const newCheckbox = document.querySelector(`.user-checkbox[data-pubkey="${pubkey}"]`);
+                if (newCheckbox) newCheckbox.checked = isChecked;
+            }
+        }
+
+        function updateUserBadge(pubkey) {
+            const userItem = document.querySelector(`.user-item[data-pubkey="${pubkey}"]`);
+            if (userItem) {
+                const status = followsBackStatus.get(pubkey) || 'checking';
+                const badgeContainer = userItem.querySelector('.badge-container');
+                
+                if (badgeContainer) {
+                    let badge = '';
+                    if (status === 'checking') {
+                        badge = '<span class="badge badge-checking">Checking...</span>';
+                    } else if (status === 'yes') {
+                        badge = '<span class="badge badge-success">✓ Follows Back</span>';
+                    } else {
+                        badge = '<span class="badge badge-warning">⚠ Doesn\'t Follow Back</span>';
+                    }
+                    badgeContainer.innerHTML = badge;
+                    
+                    // Apply filter if active
+                    applyFilter();
+                }
+            }
+        }
+
+        function updateStats() {
+            const notFollowingBackCount = followingList.filter(pubkey => 
+                followsBackStatus.get(pubkey) === 'no'
+            ).length;
+
+            document.getElementById('followingCount').textContent = followingList.length;
+            document.getElementById('notFollowingBackCount').textContent = notFollowingBackCount;
+            document.getElementById('selectedCount').textContent = selectedUsers.size;
+        }
+
+        function applyFilter() {
+            const filterChecked = document.getElementById('filterNonFollowers').checked;
+            const userItems = document.querySelectorAll('.user-item');
+            
+            userItems.forEach(item => {
+                const pubkey = item.dataset.pubkey;
+                const status = followsBackStatus.get(pubkey);
+                
+                if (filterChecked) {
+                    // Only show users who don't follow back
+                    item.style.display = (status === 'no') ? 'flex' : 'none';
+                } else {
+                    // Show all users
+                    item.style.display = 'flex';
+                }
+            });
+        }
+
+        function toggleSelectAll() {
+            const checked = document.getElementById('selectAllCheckbox').checked;
+            document.querySelectorAll('.user-item').forEach(item => {
+                // Only toggle visible items
+                if (item.style.display !== 'none') {
+                    const cb = item.querySelector('.user-checkbox');
+                    if (cb) {
+                cb.checked = checked;
+                if (checked) {
+                    selectedUsers.add(cb.dataset.pubkey);
+                } else {
+                    selectedUsers.delete(cb.dataset.pubkey);
+                        }
+                    }
+                }
+            });
+            updateSelection();
+        }
+
+        function updateSelection() {
+            selectedUsers.clear();
+            document.querySelectorAll('.user-checkbox:checked').forEach(cb => {
+                selectedUsers.add(cb.dataset.pubkey);
+            });
+
+            document.getElementById('selectedCount').textContent = selectedUsers.size;
+            document.getElementById('unfollowBtn').disabled = selectedUsers.size === 0;
+
+            const allChecked = document.querySelectorAll('.user-checkbox').length === selectedUsers.size;
+            document.getElementById('selectAllCheckbox').checked = allChecked && selectedUsers.size > 0;
+        }
+
+        async function unfollowSelected() {
+            if (selectedUsers.size === 0) return;
+
+            if (!confirm(`Are you sure you want to unfollow ${selectedUsers.size} user(s)?`)) {
+                return;
+            }
+
+            const btn = document.getElementById('unfollowBtn');
+            btn.disabled = true;
+            btn.textContent = 'Unfollowing...';
+
+            try {
+                // Remove selected users from following list
+                const newFollowList = followingList.filter(pubkey => !selectedUsers.has(pubkey));
+
+                // Create new follow list event using NDK
+                const event = new NDKEvent(ndk, {
+                    kind: 3,
+                    created_at: Math.floor(Date.now() / 1000),
+                    tags: newFollowList.map(pubkey => ['p', pubkey]),
+                    content: ''
+                });
+                
+                console.log('📝 UNFOLLOW EVENT (before signing):', event.rawEvent());
+
+                // Sign the event (uses NIP-07 signer)
+                await event.sign();
+                console.log('✍️ SIGNED UNFOLLOW EVENT:', event.rawEvent());
+
+                // Publish to relays
+                console.log('📤 Publishing unfollow event to', relays.length, 'relay(s)');
+                const relaySet = await event.publish();
+                
+                console.log('✅ Event published to', relaySet.size, 'relay(s)');
+
+                alert('Successfully unfollowed selected users!');
+
+                // Reload data
+                await loadFollowData();
+                selectedUsers.clear();
+
+            } catch (error) {
+                console.error('❌ Error unfollowing users:', error);
+                alert('Error unfollowing users: ' + error.message);
+                btn.disabled = false;
+                btn.textContent = 'Unfollow Selected';
+            }
+        }
+        
+        window.unfollowSelected = unfollowSelected;
+        window.toggleSelectAll = toggleSelectAll;
+        window.applyFilter = applyFilter;
+        window.updateSelection = updateSelection;
+    </script>
+
+</body>
+
+</html>
