@@ -1,9 +1,9 @@
 import { defineConfig } from 'vite'
 
 export default defineConfig({
-  // Set base to '/' for custom domain or root deployment
-  // Change to '/unfollowstr/' if deploying to username.github.io/unfollowstr/
-  base: '/',
+  // Set to '/unfollowstr/' for GitHub Pages deployment at username.github.io/unfollowstr/
+  // Change to '/' if using a custom domain
+  base: '/unfollowstr/',
   server: {
     port: 3000,
     open: true
