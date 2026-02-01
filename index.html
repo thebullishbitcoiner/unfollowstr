@@ -272,6 +272,42 @@
             margin-top: 5px;
         }
 
+        .follow-back-status {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 12px 16px;
+            margin: 16px 0;
+            background: #f8f9ff;
+            border: 1px solid #e0e4ff;
+            border-radius: 10px;
+            font-size: 0.95em;
+            color: #444;
+        }
+
+        .follow-back-status .mini-spinner {
+            width: 18px;
+            height: 18px;
+            border: 2px solid #e0e0e0;
+            border-top-color: #667eea;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        .follow-back-status.done .mini-spinner {
+            display: none;
+        }
+
+        .follow-back-status.done {
+            background: #e8f5e9;
+            border-color: #c8e6c9;
+            color: #2e7d32;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
         .controls {
             display: flex;
             gap: 15px;
@@ -527,6 +563,11 @@
                         </div>
                     </div>
 
+                    <div id="followBackStatus" class="follow-back-status" style="display: none;" aria-live="polite">
+                        <span class="mini-spinner" aria-hidden="true"></span>
+                        <span id="followBackStatusText">Checking who follows you back...</span>
+                    </div>
+
                     <div class="controls">
                         <label>
                             <input type="checkbox" id="selectAllCheckbox">
@@ -551,7 +592,7 @@
     </div>
 
     <script type="module">
-        import NDK, { NDKNip07Signer, NDKEvent } from '@nostr-dev-kit/ndk';
+        import NDK, { NDKNip07Signer, NDKEvent, NDKRelaySet, getRelayListForUsers } from '@nostr-dev-kit/ndk';
         import { nip19 } from 'nostr-tools';
         import packageJson from './package.json';
         
@@ -564,10 +605,65 @@
         let selectedUsers = new Set();
         let userMetadata = new Map(); // Store user metadata (names, pictures, etc)
         let followsBackStatus = new Map(); // Track who follows back
+        /** Logged-in user's write relays for publish (NIP-65); null = use default relays. */
+        let userPublishRelayUrls = null;
         let relays = [
-            'wss://relay.nostr.band',
-            'wss://relay.damus.io'
+            'wss://relay.primal.net',
+            'wss://relay.damus.io',
+            'wss://nos.lol',
+            'wss://purplepag.es'
         ];
+        
+        // Relays we never use (from NIP-65 or defaults); filtered out everywhere
+        const RELAY_BLOCKLIST = [
+            'relay.nostr.band',
+            'relay.nostr.info'
+        ];
+        
+        function relayUrlToHost(url) {
+            return (url || '').replace(/^wss?:\/\//, '').split('/')[0].toLowerCase();
+        }
+        
+        /** Ensure relay URL has wss:// (or ws://) so NDK connects correctly. */
+        function ensureWssUrl(url) {
+            if (!url || typeof url !== 'string') return url;
+            const s = url.trim();
+            if (/^wss?:\/\//i.test(s)) return s;
+            return 'wss://' + s.replace(/^\/+/, '');
+        }
+        
+        /** Ensure image URL has https:// so browsers can load it (fixes ERR_NAME_NOT_RESOLVED for bare domains). */
+        function ensureImageUrl(url) {
+            if (!url || typeof url !== 'string') return url;
+            const s = url.trim();
+            if (/^https?:\/\//i.test(s)) return s;
+            return 'https://' + s.replace(/^\/+/, '');
+        }
+        
+        /** Filter out blocklisted relays and normalize URLs. */
+        function filterRelayUrls(urls) {
+            if (!urls || urls.length === 0) return urls;
+            return urls
+                .filter(u => {
+                    const host = relayUrlToHost(u);
+                    return !RELAY_BLOCKLIST.some(block => host === block || host.endsWith('.' + block));
+                })
+                .map(ensureWssUrl);
+        }
+        
+        /** Hardcoded relay set (filtered by blocklist). */
+        function getDefaultRelaySet() {
+            const urls = filterRelayUrls([...relays]);
+            return NDKRelaySet.fromRelayUrls(urls.length > 0 ? urls : [...relays], ndk, true);
+        }
+
+        /** Relay set for publishing: logged-in user's write relays if available, else default. */
+        function getPublishRelaySet() {
+            if (userPublishRelayUrls && userPublishRelayUrls.length > 0) {
+                return NDKRelaySet.fromRelayUrls(userPublishRelayUrls, ndk, true);
+            }
+            return getDefaultRelaySet();
+        }
         
         // LocalStorage constants
         const CACHE_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours
@@ -615,7 +711,9 @@
                     return null;
                 }
                 
-                return cacheEntry.metadata;
+                const meta = cacheEntry.metadata;
+                if (meta?.picture) meta.picture = ensureImageUrl(meta.picture);
+                return meta;
             } catch (error) {
                 console.warn('Failed to load metadata from cache:', error);
                 return null;
@@ -683,14 +781,14 @@
             });
             
             console.log('🚀 Initializing NDK...');
+            const relayUrls = filterRelayUrls([...relays]);
             ndk = new NDK({
-                explicitRelayUrls: relays,
-                // aiGuardrails: true // Enable for development
+                explicitRelayUrls: (relayUrls.length > 0 ? relayUrls : relays).map(u => ensureWssUrl(u)),
             });
             
             try {
                 await ndk.connect();
-                console.log('✓ NDK connected to relays:', relays);
+                console.log('✓ NDK connected to relays:', ndk.explicitRelayUrls || relays);
             } catch (error) {
                 console.error('❌ Failed to connect to relays:', error);
             }
@@ -722,7 +820,7 @@
                 // Get user metadata if available
                 const metadata = userMetadata.get(userPubkey);
                 const displayName = metadata?.display_name || metadata?.name || 'Anonymous';
-                const picture = metadata?.picture || `https://api.dicebear.com/7.x/identicon/svg?seed=${userPubkey}`;
+                const picture = (metadata?.picture ? ensureImageUrl(metadata.picture) : null) || `https://api.dicebear.com/7.x/identicon/svg?seed=${userPubkey}`;
                 
                 // Convert to npub and shorten it
                 let displayPubkey;
@@ -789,7 +887,7 @@
                             const metadata = {
                                 name: profile.name,
                                 display_name: profile.displayName,
-                                picture: profile.image,
+                                picture: profile.image ? ensureImageUrl(profile.image) : undefined,
                                 about: profile.about,
                                 nip05: profile.nip05,
                                 created_at: profile.created_at || Date.now() / 1000
@@ -822,7 +920,7 @@
             selectedUsers.clear();
             userMetadata.clear();
             followsBackStatus.clear();
-            
+            userPublishRelayUrls = null;
             // Remove signer
             if (ndk) {
                 ndk.signer = undefined;
@@ -841,8 +939,6 @@
             document.getElementById('dataSection').style.display = 'none';
 
             try {
-                // Fetch user's following list
-                console.log('Starting to fetch follow list...');
                 document.getElementById('statusText').textContent = 'Fetching your following list...';
                 followingList = await fetchFollowList(userPubkey);
                 console.log('Following list fetched:', followingList.length, 'users');
@@ -852,18 +948,30 @@
                     return;
                 }
 
-                // Initialize follow-back status as "checking" for all
                 followingList.forEach(pubkey => {
                     followsBackStatus.set(pubkey, 'checking');
                 });
 
-                // Display the list immediately
                 displayResults();
-
-                // Start background processes
                 console.log('Starting background metadata and follow-back checks...');
                 fetchMetadataInBackground(followingList);
                 checkFollowsBackInBackground(followingList);
+
+                // Fetch logged-in user's NIP-65 relay list for unfollow publish (non-blocking)
+                if (userPubkey && ndk) {
+                    getRelayListForUsers([userPubkey], ndk).then((relayLists) => {
+                        const list = relayLists.get(userPubkey);
+                        // Use all relays from the list (not just writeRelayUrls) so we publish everywhere
+                        const allUrls = list?.relays ? [...list.relays] : [];
+                        if (allUrls.length > 0) {
+                            const filtered = filterRelayUrls(allUrls);
+                            userPublishRelayUrls = filtered.length > 0 ? filtered : null;
+                            console.log('✓ Using', userPublishRelayUrls?.length ?? 0, 'user relay(s) for publish');
+                        } else {
+                            userPublishRelayUrls = null;
+                        }
+                    }).catch(() => { userPublishRelayUrls = null; });
+                }
 
             } catch (error) {
                 console.error('Load data error:', error);
@@ -873,34 +981,27 @@
 
         async function fetchFollowList(pubkey) {
             console.log('📋 Fetching follow list from relays:', relays);
-            
             try {
-                // Use NDK to fetch follow list (Kind 3 event)
                 const filter = { kinds: [3], authors: [pubkey], limit: 1 };
                 const events = await ndk.fetchEvents(filter);
-                
                 if (events.size === 0) {
                     console.log('No follow list found');
                     return [];
                 }
                 
-                // Get the most recent event
                 const event = Array.from(events)[0];
                 console.log('📋 FOLLOW LIST EVENT (Kind 3):', event.rawEvent());
                 
-                // Extract p tags (follows) and validate them
                 const follows = event.tags
                     .filter(tag => tag[0] === 'p')
                     .map(tag => tag[1])
-                    .filter(pubkey => {
-                        // Validate that pubkey is a 64-character hex string
-                        if (!pubkey || typeof pubkey !== 'string' || pubkey.length !== 64) {
-                            console.warn('⚠️ Skipping invalid pubkey in follow list:', pubkey);
+                    .filter(p => {
+                        if (!p || typeof p !== 'string' || p.length !== 64) {
+                            console.warn('⚠️ Skipping invalid pubkey in follow list:', p);
                             return false;
                         }
-                        // Check if it's a valid hex string
-                        if (!/^[0-9a-f]{64}$/i.test(pubkey)) {
-                            console.warn('⚠️ Skipping non-hex pubkey in follow list:', pubkey);
+                        if (!/^[0-9a-f]{64}$/i.test(p)) {
+                            console.warn('⚠️ Skipping non-hex pubkey in follow list:', p);
                             return false;
                         }
                         return true;
@@ -914,81 +1015,105 @@
             }
         }
 
-        // Background check for who follows back - updates UI in real-time
-        async function checkFollowsBackInBackground(pubkeys) {
-            console.log('🔄 Starting follow-back check for', pubkeys.length, 'users from', relays.length, 'relay(s)');
-            
-            // Batch into smaller chunks to avoid relay limits (max 100 per batch)
-            const BATCH_SIZE = 100;
-            const batches = [];
-            for (let i = 0; i < pubkeys.length; i += BATCH_SIZE) {
-                batches.push(pubkeys.slice(i, i + BATCH_SIZE));
+        const FOLLOW_BACK_RELAYS = [
+            'wss://hist.nostr.land',
+            'wss://relay.primal.net',
+            'wss://nos.lol',
+            'wss://relay.damus.io'
+        ];
+        const FOLLOW_BACK_BATCH_SIZE = 500;
+        const FOLLOW_BACK_EOSE_WAIT_MS = 1500; // Wait after first EOSE for slower relays
+
+        function showFollowBackStatus(text, done = false) {
+            const el = document.getElementById('followBackStatus');
+            const textEl = document.getElementById('followBackStatusText');
+            const spinnerEl = el?.querySelector('.mini-spinner');
+            if (!el || !textEl) return;
+            el.style.display = 'flex';
+            if (done) {
+                el.classList.add('done');
+                if (spinnerEl) spinnerEl.style.display = 'none';
+            } else {
+                el.classList.remove('done');
+                if (spinnerEl) spinnerEl.style.display = '';
             }
-            
-            console.log('   Split into', batches.length, 'batch(es) of max', BATCH_SIZE, 'users each');
-            
+            textEl.textContent = text;
+        }
+
+        async function checkFollowsBackInBackground(pubkeys) {
+            const followBackRelaySet = NDKRelaySet.fromRelayUrls(FOLLOW_BACK_RELAYS, ndk, true);
+            const total = pubkeys.length;
+            showFollowBackStatus(`Checking who follows you back... (0 / ${total})`, false);
+
+            const batches = [];
+            for (let i = 0; i < pubkeys.length; i += FOLLOW_BACK_BATCH_SIZE) {
+                batches.push(pubkeys.slice(i, i + FOLLOW_BACK_BATCH_SIZE));
+            }
+
             let followBackCount = 0;
             let batchesCompleted = 0;
-            
-            // Process each batch
-            batches.forEach((batch, batchIndex) => {
-                console.log(`   📦 Starting follow-back batch ${batchIndex + 1}/${batches.length} (${batch.length} users)`);
-                
-                const filter = {
-                    kinds: [3],
-                    authors: batch,
-                    '#p': [userPubkey]
-                };
-                
-                const sub = ndk.subscribe(filter, { closeOnEose: false }, {
-                    onEvent: (event) => {
-                        followBackCount++;
-                        if (followBackCount <= 5) {
-                            console.log('🔄 FOLLOW-BACK CHECK EVENT (Kind 3):', event.rawEvent());
-                        } else if (followBackCount === 6) {
-                            console.log('🔄 ... (suppressing further follow-back logs)');
-                        }
-                        
-                        const pubkey = event.pubkey;
-                        followsBackStatus.set(pubkey, 'yes');
-                        
-                        if (followBackCount <= 5) {
-                            console.log('✓ Follows back:', pubkey.substring(0, 8));
-                        }
+            let statusUpdateScheduled = false;
+            let finishScheduled = false;
+            let finishTimeoutId = null;
+
+            function scheduleStatusUpdate() {
+                if (statusUpdateScheduled) return;
+                statusUpdateScheduled = true;
+                requestAnimationFrame(() => {
+                    showFollowBackStatus(
+                        `Checking who follows you back... (${followBackCount} follow back so far / ${total})`,
+                        false
+                    );
+                    statusUpdateScheduled = false;
+                });
+            }
+
+            function onEvent(event) {
+                const pubkey = event.pubkey;
+                if (followsBackStatus.get(pubkey) === 'yes') return; // Dedupe when using multiple relays
+                followBackCount++;
+                followsBackStatus.set(pubkey, 'yes');
+                updateUserBadge(pubkey);
+                scheduleStatusUpdate();
+            }
+
+            function finish() {
+                if (finishTimeoutId) clearTimeout(finishTimeoutId);
+                pubkeys.forEach(pubkey => {
+                    if (followsBackStatus.get(pubkey) === 'checking') {
+                        followsBackStatus.set(pubkey, 'no');
                         updateUserBadge(pubkey);
-                    },
+                    }
+                });
+                updateStats();
+                const notFollowingBack = total - followBackCount;
+                showFollowBackStatus(`Done. ${followBackCount} follow back, ${notFollowingBack} don't.`, true);
+                console.log(`✅ Follow-back complete. ${followBackCount}/${total} follow back, ${notFollowingBack} don't`);
+            }
+
+            batches.forEach((batch) => {
+                const filter = { kinds: [3], authors: batch, '#p': [userPubkey] };
+                const sub = ndk.subscribe(filter, { closeOnEose: true, relaySet: followBackRelaySet }, {
+                    onEvent,
                     onEose: () => {
                         batchesCompleted++;
-                        console.log(`   ✓ Follow-back batch ${batchIndex + 1}/${batches.length} complete (EOSE)`);
                         sub.stop();
-                        
-                        if (batchesCompleted === batches.length) {
-                            // Mark remaining as "no"
-                            pubkeys.forEach(pubkey => {
-                                if (followsBackStatus.get(pubkey) === 'checking') {
-                                    followsBackStatus.set(pubkey, 'no');
-                                    updateUserBadge(pubkey);
-                                }
-                            });
-                            updateStats();
-                            
-                            const notFollowingBack = pubkeys.length - followBackCount;
-                            console.log(`✅ All follow-back batches complete. ${followBackCount}/${pubkeys.length} follow back, ${notFollowingBack} don't`);
+                        if (batchesCompleted === batches.length && !finishScheduled) {
+                            finishScheduled = true;
+                            finishTimeoutId = setTimeout(finish, FOLLOW_BACK_EOSE_WAIT_MS);
                         }
                     }
                 });
             });
         }
 
-        // Fetch metadata for all users in background using NDK's built-in profile fetching
         async function fetchMetadataInBackground(pubkeys) {
+            const defaultRelaySet = getDefaultRelaySet();
             console.log('📋 Fetching metadata for', pubkeys.length, 'users from', relays.length, 'relay(s)');
-            
             let metadataCount = 0;
             let cacheHits = 0;
             let cacheMisses = 0;
             
-            // First, load all cached metadata
             pubkeys.forEach(pubkey => {
                 const cached = loadMetadataFromCache(pubkey);
                 if (cached) {
@@ -1002,52 +1127,40 @@
                 console.log(`💾 Loaded ${cacheHits} profiles from cache`);
             }
             
-            // Fetch profiles in parallel (NDK handles batching internally)
-            const profilePromises = pubkeys.map(async (pubkey, index) => {
+            const profilePromises = pubkeys.map(async (pubkey) => {
+                if (userMetadata.has(pubkey)) return;
+                cacheMisses++;
+                const user = ndk.getUser({ pubkey });
                 try {
-                    // Skip if already in cache
-                    if (userMetadata.has(pubkey)) {
-                        return;
-                    }
-                    
-                    cacheMisses++;
-                    const user = ndk.getUser({ pubkey });
-                    const profile = await user.fetchProfile();
-                    
+                    const profile = await user.fetchProfile({ relaySet: defaultRelaySet });
                     if (profile) {
                         metadataCount++;
-                        
                         if (metadataCount <= 5) {
                             console.log('👤 Fetched profile:', { pubkey: pubkey.substring(0, 8), profile });
                         } else if (metadataCount === 6) {
                             console.log('👤 ... (suppressing further metadata logs)');
                         }
-                        
                         const metadata = {
                             name: profile.name,
                             display_name: profile.displayName,
-                            picture: profile.image,
+                            picture: profile.image ? ensureImageUrl(profile.image) : undefined,
                             about: profile.about,
                             nip05: profile.nip05,
                             created_at: profile.created_at || Date.now() / 1000
                         };
-                        
                         userMetadata.set(pubkey, metadata);
                         saveMetadataToCache(pubkey, metadata);
                         updateUserDisplay(pubkey);
                     }
                 } catch (error) {
-                    // Silently fail for missing profiles
-                    if (metadataCount < 5) {
+                    if (cacheMisses <= 10) {
                         console.debug('No profile found for:', pubkey.substring(0, 8));
                     }
                 }
             });
             
-            // Wait for all profiles to be fetched (with a timeout)
             await Promise.allSettled(profilePromises);
-            
-            console.log(`✅ Metadata fetching complete. Cache hits: ${cacheHits}, Network fetches: ${metadataCount}/${cacheMisses} (${cacheMisses > 0 ? Math.round(metadataCount/cacheMisses*100) : 0}%)`);
+            console.log(`✅ Metadata complete. Cache: ${cacheHits}, Fetched: ${metadataCount}/${cacheMisses} (${cacheMisses > 0 ? Math.round(metadataCount / cacheMisses * 100) : 0}%)`);
         }
 
         function displayResults() {
@@ -1124,7 +1237,7 @@
             const metadata = userMetadata.get(pubkey);
             const status = followsBackStatus.get(pubkey) || 'checking';
             const displayName = metadata?.display_name || metadata?.name || 'Unknown';
-            const picture = metadata?.picture || `https://api.dicebear.com/7.x/identicon/svg?seed=${pubkey}`;
+            const picture = (metadata?.picture ? ensureImageUrl(metadata.picture) : null) || `https://api.dicebear.com/7.x/identicon/svg?seed=${pubkey}`;
             
             // Convert pubkey to npub and shorten it with error handling
             let shortenedNpub;
@@ -1346,18 +1459,20 @@
                 await event.sign();
                 console.log('✍️ SIGNED UNFOLLOW EVENT:', event.rawEvent());
 
-                // Publish to relays
-                console.log('📤 Publishing unfollow event to', relays.length, 'relay(s)');
-                const relaySet = await event.publish();
+                const publishRelaySet = getPublishRelaySet();
+                console.log('📤 Publishing unfollow event to', publishRelaySet.relays.size, 'relay(s)');
+                const publishedTo = await event.publish(publishRelaySet);
                 
-                console.log('✅ Event published to', relaySet.size, 'relay(s)');
+                console.log('✅ Event published to', publishedTo.size, 'relay(s)');
 
                 alert('Successfully unfollowed selected users!');
 
                 // Reload data
                 await loadFollowData();
                 selectedUsers.clear();
-
+                updateSelection();
+                btn.textContent = 'Unfollow Selected';
+                btn.disabled = selectedUsers.size === 0;
             } catch (error) {
                 console.error('❌ Error unfollowing users:', error);
                 alert('Error unfollowing users: ' + error.message);
