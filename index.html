@@ -882,7 +882,7 @@
                         userMetadata.set(userPubkey, cachedProfile);
                     } else {
                         // Fetch from network
-                        const profile = await currentUser.fetchProfile();
+                        const profile = await currentUser.fetchProfile({ relaySet: getDefaultRelaySet() });
                         if (profile) {
                             const metadata = {
                                 name: profile.name,

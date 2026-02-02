@@ -272,6 +272,42 @@
             margin-top: 5px;
         }
 
+        .follow-back-status {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 12px 16px;
+            margin: 16px 0;
+            background: #f8f9ff;
+            border: 1px solid #e0e4ff;
+            border-radius: 10px;
+            font-size: 0.95em;
+            color: #444;
+        }
+
+        .follow-back-status .mini-spinner {
+            width: 18px;
+            height: 18px;
+            border: 2px solid #e0e0e0;
+            border-top-color: #667eea;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        .follow-back-status.done .mini-spinner {
+            display: none;
+        }
+
+        .follow-back-status.done {
+            background: #e8f5e9;
+            border-color: #c8e6c9;
+            color: #2e7d32;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
         .controls {
             display: flex;
             gap: 15px;
@@ -465,7 +501,7 @@
 
     </style>
 
-  <script type="module" crossorigin src="/unfollowstr/assets/index-Bss4TJYn.js"></script>
+  <script type="module" crossorigin src="/unfollowstr/assets/index-Bd1uTTee.js"></script>
 </head>
 
 <body>
@@ -526,6 +562,11 @@
                             <div class="stat-number" id="selectedCount">0</div>
                             <div class="stat-label">Selected</div>
                         </div>
+                    </div>
+
+                    <div id="followBackStatus" class="follow-back-status" style="display: none;" aria-live="polite">
+                        <span class="mini-spinner" aria-hidden="true"></span>
+                        <span id="followBackStatusText">Checking who follows you back...</span>
                     </div>
 
                     <div class="controls">
