@@ -420,6 +420,17 @@
             color: #856404;
         }
 
+        .badge-unknown {
+            background: #e7f1ff;
+            color: #1565c0;
+            border: 1px solid #90caf9;
+        }
+
+        .user-checkbox:disabled {
+            opacity: 0.45;
+            cursor: not-allowed;
+        }
+
         @keyframes pulse {
             0%, 100% {
                 opacity: 1;
@@ -501,7 +512,7 @@
 
     </style>
 
-  <script type="module" crossorigin src="/unfollowstr/assets/index-Bd1uTTee.js"></script>
+  <script type="module" crossorigin src="/unfollowstr/assets/index-CWbOOxVn.js"></script>
 </head>
 
 <body>
@@ -559,6 +570,10 @@
                             <div class="stat-label">Not Following Back</div>
                         </div>
                         <div class="stat-card">
+                            <div class="stat-number" id="unknownFollowBackCount">0</div>
+                            <div class="stat-label">Couldn't Verify</div>
+                        </div>
+                        <div class="stat-card">
                             <div class="stat-number" id="selectedCount">0</div>
                             <div class="stat-label">Selected</div>
                         </div>
@@ -566,7 +581,7 @@
 
                     <div id="followBackStatus" class="follow-back-status" style="display: none;" aria-live="polite">
                         <span class="mini-spinner" aria-hidden="true"></span>
-                        <span id="followBackStatusText">Checking who follows you back...</span>
+                        <span id="followBackStatusText">Pass 1: scanning public relays...</span>
                     </div>
 
                     <div class="controls">

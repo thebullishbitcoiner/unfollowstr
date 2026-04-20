@@ -420,6 +420,17 @@
             color: #856404;
         }
 
+        .badge-unknown {
+            background: #e7f1ff;
+            color: #1565c0;
+            border: 1px solid #90caf9;
+        }
+
+        .user-checkbox:disabled {
+            opacity: 0.45;
+            cursor: not-allowed;
+        }
+
         @keyframes pulse {
             0%, 100% {
                 opacity: 1;
@@ -558,6 +569,10 @@
                             <div class="stat-label">Not Following Back</div>
                         </div>
                         <div class="stat-card">
+                            <div class="stat-number" id="unknownFollowBackCount">0</div>
+                            <div class="stat-label">Couldn't Verify</div>
+                        </div>
+                        <div class="stat-card">
                             <div class="stat-number" id="selectedCount">0</div>
                             <div class="stat-label">Selected</div>
                         </div>
@@ -565,7 +580,7 @@
 
                     <div id="followBackStatus" class="follow-back-status" style="display: none;" aria-live="polite">
                         <span class="mini-spinner" aria-hidden="true"></span>
-                        <span id="followBackStatusText">Checking who follows you back...</span>
+                        <span id="followBackStatusText">Pass 1: scanning public relays...</span>
                     </div>
 
                     <div class="controls">
@@ -605,7 +620,7 @@
         let selectedUsers = new Set();
         let userMetadata = new Map(); // Store user metadata (names, pictures, etc)
         let followsBackStatus = new Map(); // Track who follows back
-        /** Logged-in user's write relays for publish (NIP-65); null = use default relays. */
+        /** Logged-in user's NIP-65 write relays for kind:3 publish; null = use default relays. */
         let userPublishRelayUrls = null;
         let relays = [
             'wss://relay.primal.net',
@@ -957,19 +972,14 @@
                 fetchMetadataInBackground(followingList);
                 checkFollowsBackInBackground(followingList);
 
-                // Fetch logged-in user's NIP-65 relay list for unfollow publish (non-blocking)
+                // Fetch logged-in user's NIP-65 relay list for unfollow publish (write relays only; non-blocking)
                 if (userPubkey && ndk) {
                     getRelayListForUsers([userPubkey], ndk).then((relayLists) => {
                         const list = relayLists.get(userPubkey);
-                        // Use all relays from the list (not just writeRelayUrls) so we publish everywhere
-                        const allUrls = list?.relays ? [...list.relays] : [];
-                        if (allUrls.length > 0) {
-                            const filtered = filterRelayUrls(allUrls);
-                            userPublishRelayUrls = filtered.length > 0 ? filtered : null;
-                            console.log('✓ Using', userPublishRelayUrls?.length ?? 0, 'user relay(s) for publish');
-                        } else {
-                            userPublishRelayUrls = null;
-                        }
+                        const writeUrls = list?.writeRelayUrls?.length ? [...list.writeRelayUrls] : [];
+                        const filtered = filterRelayUrls(writeUrls);
+                        userPublishRelayUrls = filtered.length > 0 ? filtered : null;
+                        console.log('✓ Using', userPublishRelayUrls?.length ?? 0, 'write relay(s) for publish');
                     }).catch(() => { userPublishRelayUrls = null; });
                 }
 
@@ -982,15 +992,28 @@
         async function fetchFollowList(pubkey) {
             console.log('📋 Fetching follow list from relays:', relays);
             try {
-                const filter = { kinds: [3], authors: [pubkey], limit: 1 };
+                // Fetch multiple kind:3 replacements and pick latest by created_at (not arbitrary Set order).
+                const filter = { kinds: [3], authors: [pubkey], limit: 100 };
                 const events = await ndk.fetchEvents(filter);
                 if (events.size === 0) {
                     console.log('No follow list found');
                     return [];
                 }
-                
-                const event = Array.from(events)[0];
-                console.log('📋 FOLLOW LIST EVENT (Kind 3):', event.rawEvent());
+
+                let event = null;
+                let bestTs = -1;
+                for (const ev of events) {
+                    const ts = typeof ev.created_at === 'number' ? ev.created_at : -1;
+                    if (ts >= bestTs) {
+                        bestTs = ts;
+                        event = ev;
+                    }
+                }
+                if (!event) {
+                    console.log('No valid follow list event');
+                    return [];
+                }
+                console.log('📋 FOLLOW LIST EVENT (Kind 3, latest):', event.rawEvent());
                 
                 const follows = event.tags
                     .filter(tag => tag[0] === 'p')
@@ -1021,8 +1044,98 @@
             'wss://nos.lol',
             'wss://relay.damus.io'
         ];
-        const FOLLOW_BACK_BATCH_SIZE = 500;
-        const FOLLOW_BACK_EOSE_WAIT_MS = 1500; // Wait after first EOSE for slower relays
+        /** Authors per REQ on well-known relays (Pass 1). */
+        const FOLLOW_BACK_BATCH_SIZE = 150;
+        /** Authors grouped per union relay set in Pass 2 (NIP-65). */
+        const FOLLOW_BACK_PASS_B_AUTHOR_BATCH = 30;
+        /** Cap union relay URLs per Pass 2 batch to limit connections. */
+        const FOLLOW_BACK_PASS_B_MAX_RELAYS = 40;
+        const FOLLOW_BACK_EOSE_WAIT_MS = 1500; // After all batch EOSEs, wait for slower relays
+
+        function chunkPubkeys(arr, size) {
+            const out = [];
+            for (let i = 0; i < arr.length; i += size) {
+                out.push(arr.slice(i, i + size));
+            }
+            return out;
+        }
+
+        /** Normalized URLs for Pass 1 (fixed index relays). */
+        function getPassAFollowBackRelayUrls() {
+            const u = filterRelayUrls([...FOLLOW_BACK_RELAYS]);
+            return u.length > 0 ? u : [...FOLLOW_BACK_RELAYS].map(ensureWssUrl);
+        }
+
+        /**
+         * Subscribe in parallel per author-batch; each REQ closes on EOSE.
+         * Resolves after every batch has EOSEd plus FOLLOW_BACK_EOSE_WAIT_MS grace.
+         */
+        function waitFollowBackSubscriptions(authorBatches, relaySet, onEvent) {
+            if (!authorBatches.length) return Promise.resolve();
+            return new Promise((resolve) => {
+                let completed = 0;
+                let finishTimer = null;
+                const scheduleResolve = () => {
+                    if (finishTimer) clearTimeout(finishTimer);
+                    finishTimer = setTimeout(resolve, FOLLOW_BACK_EOSE_WAIT_MS);
+                };
+                const onBatchEose = () => {
+                    completed++;
+                    if (completed >= authorBatches.length) {
+                        scheduleResolve();
+                    }
+                };
+                authorBatches.forEach((batch) => {
+                    const filter = { kinds: [3], authors: batch, '#p': [userPubkey] };
+                    const sub = ndk.subscribe(filter, { closeOnEose: true, relaySet }, {
+                        onEvent,
+                        onEose: () => {
+                            sub.stop();
+                            onBatchEose();
+                        }
+                    });
+                });
+            });
+        }
+
+        /** Pass 2: union read (then both/write) relays per author batch; empty NIP-65 falls back to Pass 1 URLs. */
+        async function runFollowBackPassNip65(uncertainPubkeys, onEvent) {
+            let relayLists;
+            try {
+                relayLists = await getRelayListForUsers(uncertainPubkeys, ndk);
+            } catch (e) {
+                console.warn('Pass 2: getRelayListForUsers failed:', e);
+                const passAUrls = getPassAFollowBackRelayUrls();
+                const relaySet = NDKRelaySet.fromRelayUrls(passAUrls, ndk, true);
+                const batches = chunkPubkeys(uncertainPubkeys, FOLLOW_BACK_BATCH_SIZE);
+                await waitFollowBackSubscriptions(batches, relaySet, onEvent);
+                return;
+            }
+
+            const authorGroups = chunkPubkeys(uncertainPubkeys, FOLLOW_BACK_PASS_B_AUTHOR_BATCH);
+            const passAFallback = getPassAFollowBackRelayUrls();
+
+            for (const group of authorGroups) {
+                const urlSet = new Set();
+                for (const pk of group) {
+                    const rl = relayLists.get(pk);
+                    let cand = [];
+                    if (rl?.readRelayUrls?.length) cand = rl.readRelayUrls;
+                    else if (rl?.bothRelayUrls?.length) cand = rl.bothRelayUrls;
+                    else if (rl?.writeRelayUrls?.length) cand = rl.writeRelayUrls;
+                    filterRelayUrls(cand).forEach((u) => urlSet.add(u));
+                }
+                let union = [...urlSet];
+                // No NIP-65 read/both/write: same fallback as Pass 1 (already scanned; cheap re-check).
+                if (union.length === 0) union = [...passAFallback];
+                if (union.length > FOLLOW_BACK_PASS_B_MAX_RELAYS) {
+                    union = union.slice(0, FOLLOW_BACK_PASS_B_MAX_RELAYS);
+                }
+                const relaySet = NDKRelaySet.fromRelayUrls(union, ndk, true);
+                const batches = chunkPubkeys(group, FOLLOW_BACK_BATCH_SIZE);
+                await waitFollowBackSubscriptions(batches, relaySet, onEvent);
+            }
+        }
 
         function showFollowBackStatus(text, done = false) {
             const el = document.getElementById('followBackStatus');
@@ -1041,70 +1154,71 @@
         }
 
         async function checkFollowsBackInBackground(pubkeys) {
-            const followBackRelaySet = NDKRelaySet.fromRelayUrls(FOLLOW_BACK_RELAYS, ndk, true);
             const total = pubkeys.length;
-            showFollowBackStatus(`Checking who follows you back... (0 / ${total})`, false);
+            let statusUpdateScheduled = false;
 
-            const batches = [];
-            for (let i = 0; i < pubkeys.length; i += FOLLOW_BACK_BATCH_SIZE) {
-                batches.push(pubkeys.slice(i, i + FOLLOW_BACK_BATCH_SIZE));
+            function countFollowBackYes() {
+                return pubkeys.filter((pk) => followsBackStatus.get(pk) === 'yes').length;
             }
 
-            let followBackCount = 0;
-            let batchesCompleted = 0;
-            let statusUpdateScheduled = false;
-            let finishScheduled = false;
-            let finishTimeoutId = null;
-
-            function scheduleStatusUpdate() {
+            function scheduleStatusUpdate(passLabel) {
                 if (statusUpdateScheduled) return;
                 statusUpdateScheduled = true;
+                const label = passLabel;
                 requestAnimationFrame(() => {
+                    const yes = countFollowBackYes();
                     showFollowBackStatus(
-                        `Checking who follows you back... (${followBackCount} follow back so far / ${total})`,
+                        `${label}: ${yes} follow back so far / ${total}`,
                         false
                     );
                     statusUpdateScheduled = false;
                 });
             }
 
+            let currentPassLabel = 'Pass 1';
             function onEvent(event) {
                 const pubkey = event.pubkey;
                 if (followsBackStatus.get(pubkey) === 'yes') return; // Dedupe when using multiple relays
-                followBackCount++;
                 followsBackStatus.set(pubkey, 'yes');
                 updateUserBadge(pubkey);
-                scheduleStatusUpdate();
+                scheduleStatusUpdate(currentPassLabel);
             }
 
-            function finish() {
-                if (finishTimeoutId) clearTimeout(finishTimeoutId);
-                pubkeys.forEach(pubkey => {
-                    if (followsBackStatus.get(pubkey) === 'checking') {
-                        followsBackStatus.set(pubkey, 'no');
-                        updateUserBadge(pubkey);
-                    }
-                });
-                updateStats();
-                const notFollowingBack = total - followBackCount;
-                showFollowBackStatus(`Done. ${followBackCount} follow back, ${notFollowingBack} don't.`, true);
-                console.log(`✅ Follow-back complete. ${followBackCount}/${total} follow back, ${notFollowingBack} don't`);
+            showFollowBackStatus(`Pass 1: scanning public relays... (0 / ${total})`, false);
+
+            const passAUrls = getPassAFollowBackRelayUrls();
+            const passARelaySet = NDKRelaySet.fromRelayUrls(passAUrls, ndk, true);
+            const passABatches = chunkPubkeys(pubkeys, FOLLOW_BACK_BATCH_SIZE);
+            await waitFollowBackSubscriptions(passABatches, passARelaySet, onEvent);
+
+            const uncertain = pubkeys.filter((pk) => followsBackStatus.get(pk) === 'checking');
+            if (uncertain.length > 0) {
+                currentPassLabel = 'Pass 2';
+                showFollowBackStatus(
+                    `Pass 2: checking ${uncertain.length} on their relays... (${countFollowBackYes()} / ${total})`,
+                    false
+                );
+                await runFollowBackPassNip65(uncertain, onEvent);
             }
 
-            batches.forEach((batch) => {
-                const filter = { kinds: [3], authors: batch, '#p': [userPubkey] };
-                const sub = ndk.subscribe(filter, { closeOnEose: true, relaySet: followBackRelaySet }, {
-                    onEvent,
-                    onEose: () => {
-                        batchesCompleted++;
-                        sub.stop();
-                        if (batchesCompleted === batches.length && !finishScheduled) {
-                            finishScheduled = true;
-                            finishTimeoutId = setTimeout(finish, FOLLOW_BACK_EOSE_WAIT_MS);
-                        }
-                    }
-                });
+            pubkeys.forEach((pubkey) => {
+                if (followsBackStatus.get(pubkey) === 'checking') {
+                    // Inconclusive after all passes — not the same as confirmed "doesn't follow back"
+                    followsBackStatus.set(pubkey, 'unknown');
+                    updateUserBadge(pubkey);
+                }
             });
+            updateStats();
+            const followBackCount = countFollowBackYes();
+            const confirmedNotBack = pubkeys.filter((pk) => followsBackStatus.get(pk) === 'no').length;
+            const unknownCount = pubkeys.filter((pk) => followsBackStatus.get(pk) === 'unknown').length;
+            showFollowBackStatus(
+                `Done. ${followBackCount} follow back, ${confirmedNotBack} don't, ${unknownCount} couldn't verify.`,
+                true
+            );
+            console.log(
+                `✅ Follow-back complete. ${followBackCount}/${total} follow back, ${confirmedNotBack} don't, ${unknownCount} unknown`
+            );
         }
 
         async function fetchMetadataInBackground(pubkeys) {
@@ -1255,13 +1369,23 @@
                 badge = '<span class="badge badge-checking">Checking...</span>';
             } else if (status === 'yes') {
                 badge = '<span class="badge badge-success">✓ Follows Back</span>';
+            } else if (status === 'unknown') {
+                badge = '<span class="badge badge-unknown">? Couldn\'t verify</span>';
             } else {
                 badge = '<span class="badge badge-warning">⚠ Doesn\'t Follow Back</span>';
             }
 
+            const checkboxDisabled = status === 'checking' || status === 'unknown';
+            const rowTitle =
+                status === 'unknown'
+                    ? "Follow-back could not be verified — excluded from bulk unfollow. Click to copy npub."
+                    : status === 'checking'
+                        ? "Checking follow-back… Click to copy npub."
+                        : "Click to copy npub";
+
             return `
-            <div class="user-item" data-pubkey="${pubkey}" style="cursor: pointer;" title="Click to copy npub">
-                <input type="checkbox" class="user-checkbox" data-pubkey="${pubkey}">
+            <div class="user-item" data-pubkey="${pubkey}" style="cursor: pointer;" title="${rowTitle.replace(/"/g, '&quot;')}">
+                <input type="checkbox" class="user-checkbox" data-pubkey="${pubkey}" ${checkboxDisabled ? 'disabled' : ''}>
                 <img src="${picture}" class="user-avatar" onerror="this.src='https://api.dicebear.com/7.x/identicon/svg?seed=${pubkey}'">
                 <div class="user-info">
                     <div class="user-name">${escapeHtml(displayName)}</div>
@@ -1359,24 +1483,38 @@
                         badge = '<span class="badge badge-checking">Checking...</span>';
                     } else if (status === 'yes') {
                         badge = '<span class="badge badge-success">✓ Follows Back</span>';
+                    } else if (status === 'unknown') {
+                        badge = '<span class="badge badge-unknown">? Couldn\'t verify</span>';
                     } else {
                         badge = '<span class="badge badge-warning">⚠ Doesn\'t Follow Back</span>';
                     }
                     badgeContainer.innerHTML = badge;
-                    
+
+                    const cb = userItem.querySelector('.user-checkbox');
+                    if (cb) {
+                        const dis = status === 'checking' || status === 'unknown';
+                        cb.disabled = dis;
+                        if (dis) cb.checked = false;
+                    }
+
                     // Apply filter if active
                     applyFilter();
+                    updateSelection();
                 }
             }
         }
 
         function updateStats() {
-            const notFollowingBackCount = followingList.filter(pubkey => 
+            const notFollowingBackCount = followingList.filter(pubkey =>
                 followsBackStatus.get(pubkey) === 'no'
+            ).length;
+            const unknownFollowBackCount = followingList.filter(pubkey =>
+                followsBackStatus.get(pubkey) === 'unknown'
             ).length;
 
             document.getElementById('followingCount').textContent = followingList.length;
             document.getElementById('notFollowingBackCount').textContent = notFollowingBackCount;
+            document.getElementById('unknownFollowBackCount').textContent = unknownFollowBackCount;
             document.getElementById('selectedCount').textContent = selectedUsers.size;
         }
 
@@ -1401,16 +1539,11 @@
         function toggleSelectAll() {
             const checked = document.getElementById('selectAllCheckbox').checked;
             document.querySelectorAll('.user-item').forEach(item => {
-                // Only toggle visible items
+                // Only toggle visible, selectable items (not checking / unknown)
                 if (item.style.display !== 'none') {
                     const cb = item.querySelector('.user-checkbox');
-                    if (cb) {
-                cb.checked = checked;
-                if (checked) {
-                    selectedUsers.add(cb.dataset.pubkey);
-                } else {
-                    selectedUsers.delete(cb.dataset.pubkey);
-                        }
+                    if (cb && !cb.disabled) {
+                        cb.checked = checked;
                     }
                 }
             });
@@ -1420,14 +1553,19 @@
         function updateSelection() {
             selectedUsers.clear();
             document.querySelectorAll('.user-checkbox:checked').forEach(cb => {
-                selectedUsers.add(cb.dataset.pubkey);
+                if (!cb.disabled) {
+                    selectedUsers.add(cb.dataset.pubkey);
+                }
             });
 
             document.getElementById('selectedCount').textContent = selectedUsers.size;
             document.getElementById('unfollowBtn').disabled = selectedUsers.size === 0;
 
-            const allChecked = document.querySelectorAll('.user-checkbox').length === selectedUsers.size;
-            document.getElementById('selectAllCheckbox').checked = allChecked && selectedUsers.size > 0;
+            const selectable = document.querySelectorAll('.user-checkbox:not(:disabled)');
+            const allSelectableChecked =
+                selectable.length > 0 &&
+                [...selectable].every((cb) => cb.checked);
+            document.getElementById('selectAllCheckbox').checked = allSelectableChecked;
         }
 
         async function unfollowSelected() {
